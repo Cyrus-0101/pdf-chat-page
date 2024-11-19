@@ -1,351 +1,248 @@
 <template>
-  <div class="min-h-screen bg-gray-50 flex">
-    <!-- PDF Section -->
-    <div class="w-1/2 border-r border-gray-200 relative">
-      <div v-if="!pdfUrl" class="h-full flex items-center justify-center">
-        <label class="cursor-pointer group">
-          <input type="file" accept="application/pdf" class="hidden" @change="handleFileUpload" />
-          <div class="flex flex-col items-center">
-            <div class="p-4 rounded-full bg-violet-100 group-hover:bg-violet-200 transition-colors">
-              <PlusIcon class="h-8 w-8 text-violet-600" />
-            </div>
-            <span class="mt-2 text-sm text-gray-600">Add PDF</span>
-          </div>
-        </label>
+  <div class="flex h-screen bg-gray-900 text-white">
+    <!-- Document Viewer -->
+    <div class="w-1/2 flex flex-col">
+      <!-- Document Controls (for PDF) -->
+      <div v-if="fileType === 'pdf'" class="flex justify-between p-2 bg-gray-800">
+        <div class="flex items-center space-x-2">
+          <button
+            @click="prevPage"
+            :disabled="currentPage <= 1"
+            class="p-1 hover:bg-gray-700 rounded text-gray-300 disabled:opacity-50"
+          >
+            <ChevronLeftIcon class="h-5 w-5" />
+          </button>
+          <span class="text-sm">{{ currentPage }} / {{ totalPages }}</span>
+          <button
+            @click="nextPage"
+            :disabled="currentPage >= totalPages"
+            class="p-1 hover:bg-gray-700 rounded text-gray-300 disabled:opacity-50"
+          >
+            <ChevronRightIcon class="h-5 w-5" />
+          </button>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button @click="zoomOut" class="p-1 hover:bg-gray-700 rounded text-gray-300">
+            <MinusIcon class="h-5 w-5" />
+          </button>
+          <button @click="zoomIn" class="p-1 hover:bg-gray-700 rounded text-gray-300">
+            <PlusIcon class="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
-      <div v-else class="h-screen flex flex-col">
-        <!-- PDF Controls -->
-        <div class="flex items-center justify-between p-2 border-b border-gray-200 bg-white">
-          <div class="flex items-center space-x-2">
-            <button class="p-1 hover:bg-gray-100 rounded" @click="currentPage > 1 && currentPage--">
-              <ChevronLeftIcon class="h-5 w-5" />
-            </button>
-            <span class="text-sm">{{ currentPage }} / {{ totalPages }}</span>
-            <button
-              class="p-1 hover:bg-gray-100 rounded"
-              @click="currentPage < totalPages && currentPage++"
-            >
-              <ChevronRightIcon class="h-5 w-5" />
-            </button>
-          </div>
-          <div class="flex items-center space-x-2">
-            <button class="p-1 hover:bg-gray-100 rounded" @click="zoomOut">
-              <MinusIcon class="h-5 w-5" />
-            </button>
-            <button class="p-1 hover:bg-gray-100 rounded" @click="zoomIn">
-              <PlusIcon class="h-5 w-5" />
-            </button>
-            <button class="p-1 hover:bg-gray-100 rounded">
-              <SearchIcon class="h-5 w-5" />
-            </button>
-          </div>
+      <!-- Document Content -->
+      <div class="flex-grow overflow-auto bg-white">
+        <div v-if="loading" class="flex items-center justify-center h-full">
+          <div class="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
         </div>
-
-        <!-- PDF Viewer -->
-        <div class="flex-1 overflow-auto">
-          <iframe :src="pdfUrl" class="w-full h-full" type="application/pdf"></iframe>
+        <canvas v-else-if="fileType === 'pdf'" ref="pdfCanvas" class="mx-auto"></canvas>
+        <div v-else-if="fileType === 'docx'" class="p-4 text-black" v-html="docxContent"></div>
+        <div v-else class="flex items-center justify-center h-full text-gray-500">
+          Unsupported file type
         </div>
       </div>
     </div>
 
     <!-- Chat Section -->
-    <div class="chat-section">
-      <div class="chat-header">
-        <h2 style="font-size: 1.125rem; font-weight: 600">Chat</h2>
-      </div>
-
-      <!-- Messages -->
-      <div class="chat-messages">
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          :class="['message', message.sender === 'user' ? 'user-message' : 'bot-message']"
-        >
-          <div class="avatar">
-            <UserIcon v-if="message.sender === 'user'" class="h-5 w-5" style="color: #ffffff" />
-            <BotIcon v-else class="h-5 w-5" style="color: #6366f1" />
+    <div class="w-1/2 flex flex-col p-4">
+      <!-- Messages Area -->
+      <div class="flex-grow overflow-y-auto space-y-4 mb-4">
+        <div v-for="(message, index) in messages" :key="index" class="flex flex-col">
+          <div
+            :class="message.role === 'user' ? 'self-end bg-purple-600' : 'self-start bg-gray-700'"
+            class="max-w-[70%] rounded-lg p-3 mb-2"
+          >
+            <p class="text-sm">{{ message.content }}</p>
           </div>
-          <div class="message-content">
-            <p>{{ message.content }}</p>
-          </div>
+          <span class="text-xs opacity-70"
+            >{{ message.role === 'user' ? 'You' : 'AI' }} •
+            {{ formatTime(message.timestamp) }}</span
+          >
         </div>
       </div>
 
-      <!-- Chat Input -->
-      <div class="p-4 border-t border-gray-200 bg-white">
-        <form @submit.prevent="sendMessage" class="flex space-x-2">
-          <input
-            v-model="newMessage"
-            type="text"
-            placeholder="Ask any question..."
-            class="flex-1 rounded-full px-4 py-2 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-          />
-          <button
-            type="submit"
-            class="p-2 rounded-full bg-violet-600 text-white hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
-          >
-            <SendIcon class="h-5 w-5" />
-          </button>
-        </form>
+      <!-- Input Area -->
+      <div class="flex items-center space-x-2">
+        <input
+          v-model="newMessage"
+          @keyup.enter="sendMessage"
+          placeholder="Type your message here..."
+          class="flex-grow p-2 bg-gray-700 border-gray-600 text-white rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        <button
+          @click="sendMessage"
+          class="bg-purple-600 text-white p-2 rounded-full hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          :disabled="isLoading"
+        >
+          <SendIcon v-if="!isLoading" class="h-5 w-5" />
+          <LoaderIcon v-else class="h-5 w-5 animate-spin" />
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import * as pdfjsLib from 'pdfjs-dist'
+import mammoth from 'mammoth'
 import {
-  Plus as PlusIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Minus as MinusIcon,
-  Search as SearchIcon,
-  User as UserIcon,
-  Bot as BotIcon,
+  Plus as PlusIcon,
   Send as SendIcon,
+  Loader as LoaderIcon,
 } from 'lucide-vue-next'
+import axios from 'axios'
 
-const pdfUrl = ref('')
+const route = useRoute()
+const documentUrl = ref('')
+const fileType = ref('')
+const loading = ref(true)
+const pdfDoc = ref(null)
+const pdfCanvas = ref(null)
 const currentPage = ref(1)
-const totalPages = ref(100)
+const totalPages = ref(0)
+const scale = ref(1.5)
+const docxContent = ref('')
+const messages = ref([])
 const newMessage = ref('')
-const messages = ref([
-  {
-    id: 1,
-    sender: 'bot',
-    content:
-      "Hello there! 👋 Welcome to the summary of an important legal case from the Court of Appeal at Kisumu. This document discusses the appeal involving Godfrey Wanjala Wafula and Kololi Wafula Nasiombe, who are seeking ownership of a parcel of land that belonged to their late father, Wafula Mulanda John. They argue that their father had occupied the land for over 12 years, thus claiming ownership through adverse possession. The case also involves the respondent, Jairus Wakhungu Mulunda, who is related to the deceased and has contested the appellants' claims. Dive in to explore the details of this intriguing legal matter!",
-  },
-  {
-    id: 2,
-    sender: 'bot',
-    content:
-      "Here are three example questions you can ask about the file:\n\n➤ What are the main arguments presented by the appellants in their case?\n➤ How does the respondent challenge the appellants' claims regarding the land?\n➤ What legal principles are involved in the concept of adverse possession as mentioned in the document?",
-  },
-  {
-    id: 3,
-    sender: 'user',
-    content: 'what was the judgement ?',
-  },
-  {
-    id: 4,
-    sender: 'bot',
-    content:
-      'The judgment concluded that the appeal lacked merit and was dismissed. The court held that the learned judge had arrived at a just conclusion regarding the ownership of the suit property, which rightfully belonged to the respondent. The respondent had proven his case on a balance of probabilities, while the appellants failed to demonstrate any bias from the learned judge or to substantiate their claims. The court also noted that the appellants had missed the opportunity to challenge certain interlocutory decisions and could not relitigate those issues at the appellate level. Consequently, the appeal was dismissed with no order as to costs, considering the close family ties between the parties involved 15, 44.',
-  },
-])
+const isLoading = ref(false)
 
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    pdfUrl.value = URL.createObjectURL(file)
+onMounted(async () => {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/+esm`
+  documentUrl.value = route.query.link
+
+  if (documentUrl.value) {
+    fileType.value = getFileType(documentUrl.value)
+    if (fileType.value === 'pdf') {
+      await loadPdf(documentUrl.value)
+    } else if (fileType.value === 'docx') {
+      await loadDocx(documentUrl.value)
+    } else {
+      console.error('Unsupported file type')
+      loading.value = false
+    }
+  }
+})
+
+const getFileType = (url) => {
+  const extension = url.split('.').pop().toLowerCase()
+  if (extension === 'pdf') return 'pdf'
+  if (extension === 'docx') return 'docx'
+  return 'unknown'
+}
+
+const loadPdf = async (url) => {
+  try {
+    const loadingTask = pdfjsLib.getDocument(url)
+    pdfDoc.value = await loadingTask.promise
+    totalPages.value = pdfDoc.value.numPages
+    await renderPage()
+  } catch (error) {
+    console.error('Error loading PDF:', error)
+  } finally {
+    loading.value = false
   }
 }
 
-const sendMessage = () => {
-  if (newMessage.value.trim()) {
-    messages.value.push({
-      id: Date.now(),
-      sender: 'user',
-      content: newMessage.value,
-    })
-    newMessage.value = ''
-    // Simulate bot response
-    setTimeout(() => {
-      messages.value.push({
-        id: Date.now(),
-        sender: 'bot',
-        content: 'I understand your question about the legal document. Let me help you with that.',
-      })
-    }, 2000)
+const loadDocx = async (url) => {
+  try {
+    const response = await axios.get(url, { responseType: 'arraybuffer' })
+    const result = await mammoth.convertToHtml({ arrayBuffer: response.data })
+    docxContent.value = result.value
+  } catch (error) {
+    console.error('Error loading DOCX:', error)
+    docxContent.value = 'Error loading document. Please try again later.'
+  } finally {
+    loading.value = false
   }
+}
+
+const renderPage = async () => {
+  if (pdfDoc.value) {
+    const page = await pdfDoc.value.getPage(currentPage.value)
+    const viewport = page.getViewport({ scale: scale.value })
+    const canvas = pdfCanvas.value
+    const context = canvas.getContext('2d')
+    canvas.height = viewport.height
+    canvas.width = viewport.width
+    await page.render({ canvasContext: context, viewport: viewport }).promise
+  }
+}
+
+watch(currentPage, renderPage)
+
+const prevPage = () => {
+  if (currentPage.value > 1) currentPage.value--
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) currentPage.value++
 }
 
 const zoomIn = () => {
-  // Implement zoom in functionality
+  scale.value += 0.1
+  renderPage()
 }
 
 const zoomOut = () => {
-  // Implement zoom out functionality
+  if (scale.value > 0.5) {
+    scale.value -= 0.1
+    renderPage()
+  }
+}
+
+const formatTime = (timestamp) => {
+  return new Date(timestamp).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+  })
+}
+
+const sendMessage = async () => {
+  if (newMessage.value.trim()) {
+    const userMessage = {
+      role: 'user',
+      content: newMessage.value.trim(),
+      timestamp: new Date(),
+    }
+    messages.value.push(userMessage)
+    newMessage.value = ''
+    isLoading.value = true
+
+    try {
+      // Simulated API call
+      const response = await new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              data: { content: 'This is a simulated AI response.' },
+            }),
+          1000,
+        ),
+      )
+
+      const aiMessage = {
+        role: 'ai',
+        content: response.data.content,
+        timestamp: new Date(),
+      }
+      messages.value.push(aiMessage)
+    } catch (error) {
+      console.error('Error sending message:', error)
+      messages.value.push({
+        role: 'ai',
+        content: 'Sorry, there was an error processing your request.',
+        timestamp: new Date(),
+      })
+    } finally {
+      isLoading.value = false
+    }
+  }
 }
 </script>
-
-<style scoped>
-.container {
-  min-height: 100vh;
-  background-color: #ffffff;
-  display: flex;
-}
-
-.pdf-section,
-.chat-section {
-  width: 50%;
-  height: 100vh;
-}
-
-.pdf-section {
-  border-right: 1px solid #e5e7eb;
-  position: relative;
-}
-
-.upload-area {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.upload-button {
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.upload-icon {
-  padding: 1rem;
-  border-radius: 9999px;
-  background-color: #ede9fe;
-  transition: background-color 0.2s;
-}
-
-.upload-icon:hover {
-  background-color: #ddd6fe;
-}
-
-.upload-text {
-  margin-top: 0.5rem;
-  font-size: 0.875rem;
-  color: #4b5563;
-}
-
-.pdf-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: white;
-}
-
-.pdf-viewer {
-  flex: 1;
-  overflow: auto;
-}
-
-.pdf-viewer iframe {
-  width: 100%;
-  height: 100%;
-}
-
-.chat-section {
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-header {
-  padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: white;
-}
-
-.chat-messages {
-  flex: 1;
-  overflow: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.message {
-  display: flex;
-  margin-bottom: 1rem;
-  max-width: 80%;
-}
-
-.user-message {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-
-.bot-message {
-  align-self: flex-start;
-}
-
-.avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 0.5rem;
-}
-
-.user-message .avatar {
-  background-color: #6366f1;
-}
-
-.bot-message .avatar {
-  background-color: #e0e7ff;
-}
-
-.message-content {
-  padding: 0.75rem 1rem;
-  border-radius: 1rem;
-}
-
-.user-message .message-content {
-  background-color: #6366f1;
-  color: white;
-  border-top-right-radius: 0;
-}
-
-.bot-message .message-content {
-  background-color: #f3f4f6;
-  color: #1f2937;
-  border-top-left-radius: 0;
-}
-
-.chat-input {
-  padding: 1rem;
-  border-top: 1px solid #e5e7eb;
-  background-color: white;
-}
-
-.chat-form {
-  display: flex;
-}
-
-.chat-input-field {
-  flex: 1;
-  padding: 0.5rem 1rem;
-  border: 1px solid #d1d5db;
-  border-radius: 9999px;
-  margin-right: 0.5rem;
-}
-
-.chat-input-field:focus {
-  outline: none;
-  ring: 2px solid #6366f1;
-  border-color: transparent;
-}
-
-.send-button {
-  padding: 0.5rem;
-  border-radius: 9999px;
-  background-color: #6366f1;
-  color: white;
-}
-
-.send-button:hover {
-  background-color: #4f46e5;
-}
-
-.send-button:focus {
-  outline: none;
-  ring: 2px solid #6366f1;
-  offset-path: 2px;
-}
-</style>
